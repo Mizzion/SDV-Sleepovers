@@ -3,31 +3,57 @@ using StardewValley;
 using StardewModdingAPI.Events;
 using System.Collections.Generic;
 using System;
+using Modworks = bwdyworks.Modworks;
+using Microsoft.Xna.Framework;
+using System.IO;
+using Newtonsoft.Json;
 
 namespace Sleepovers
 {
     public class Mod : StardewModdingAPI.Mod
     {
-#if DEBUG
-        private static readonly bool DEBUG = true;
-#else
-        private static readonly bool DEBUG = false;
-#endif
-        public static Mod Instance;
-        public static bwdyworks.ModUtil ModUtil;
+        internal static bool Debug = false;
+        [System.Diagnostics.Conditional("DEBUG")]
+        public void EntryDebug() { Debug = true; }
+        internal static string Module;
+
+        public static List<string> NoSleep;
         public static List<string> Attempts = new List<string>();
 
         public override void Entry(IModHelper helper)
         {
-            ModUtil = new bwdyworks.ModUtil(this);
-            Instance = this;
-            if(ModUtil.StartConfig(DEBUG))
+            Module = helper.ModRegistry.ModID;
+            EntryDebug();
+            if (!Modworks.InstallModule(Module, Debug)) return;
+
+            Modworks.Events.NPCCheckAction += Events_NPCCheckAction;
+
+            try
             {
-                Config.Load();
-                if (!Config.ready) return;
-                helper.Events.Input.ButtonPressed += Input_ButtonPressed;
-                helper.Events.GameLoop.DayStarted += GameLoop_DayStarted;
-                ModUtil.EndConfig();
+                string filecontents = File.ReadAllText(Helper.DirectoryPath + Path.DirectorySeparatorChar + "config.json");
+                NoSleep = JsonConvert.DeserializeObject<List<string>>(filecontents);
+            }
+            catch (Exception)
+            {
+                NoSleep = new List<string>();
+            }
+            helper.Events.GameLoop.DayStarted += GameLoop_DayStarted;
+        }
+
+        private void Events_NPCCheckAction(object sender, bwdyworks.Events.NPCCheckActionEventArgs args)
+        {
+            if (args.Cancelled) return; //someone else already ate this one
+            if (Game1.player.ActiveObject == null) //empty hands to sleep
+            {
+                if (Attempts.Contains(args.NPC.Name)) return; //already tried. no means no.
+
+                //check if NPC is present
+                if (IsNPCInBed(args.NPC))
+                {
+                    args.Cancelled = true;
+                    Modworks.Menus.AskQuestion("Sleepover with " + args.NPC.Name + "?", new[] { new Response(args.NPC.Name, "Yes"), new Response(".nope.", "No") }, QuestionCallback);
+                }
+                return;
             }
         }
 
@@ -36,58 +62,29 @@ namespace Sleepovers
             Attempts.Clear();
         }
 
-        private void Input_ButtonPressed(object sender, ButtonPressedEventArgs e)
+        public Point? GetBedLocation(NPC c)
         {
-            if (e.Button.IsActionButton())
+            int latest = 0;
+            foreach(var kvp in c.Schedule)
             {
-                if (Context.IsPlayerFree)
-                {
-                    var target = ModUtil.GetLocalPlayerFacingTileCoordinate();
-                    var key = Game1.currentLocation.Name + "." + target[0] + "." + target[1];
-                    //check out bed in front of player
-                    var bed = Config.GetNPC(new BedLoc(key));
-                    if (bed != null)
-                    {
-                        if (Attempts.Contains(bed)) return; //already tried. no means no.
-                        StardewValley.NPC npci = Game1.getCharacterFromName(bed);
-                        
-                        //check if NPC is present
-                        if(IsNPCInBed(Game1.getCharacterFromName(bed), new BedLoc(key)))
-                        {
-                            Helper.Input.Suppress(e.Button);
-                            ModUtil.AskQuestion("Sleepover with " + bed + "?", new[] { new Response(bed, "Yes"), new Response(".nope.", "No") }, QuestionCallback);
-                        }
-                        return;
-                    }
-
-                    target = ModUtil.GetLocalPlayerStandingTileCoordinate();
-                    key = Game1.currentLocation.Name + "." + target[0] + "." + target[1];
-
-                    //check out bed under player (woohoo you're already on top of them)
-                    bed = Config.GetNPC(new BedLoc(key));
-                    if (bed != null)
-                    {
-                        if (Attempts.Contains(bed)) return; //already tried. no means no.
-                        StardewValley.NPC npci = Game1.getCharacterFromName(bed);
-
-                        //check if NPC is present
-                        if (IsNPCInBed(Game1.getCharacterFromName(bed), new BedLoc(key)))
-                        {
-                            //check if NPC is present
-                            Helper.Input.Suppress(e.Button);
-                            ModUtil.AskQuestion("Sleepover with " + bed + "?", new[] { new Response(bed, "Yes"), new Response(".nope.", "No") }, QuestionCallback);
-                        }
-                        return;
-                    }
-                }
+                if (kvp.Key > latest) latest = kvp.Key;
             }
+            if (c.Schedule.ContainsKey(latest))
+            {
+                Point[] paths = new Point[c.Schedule[latest].route.Count];
+                c.Schedule[latest].route.CopyTo(paths, 0);
+                return paths[paths.Length - 1];
+            }
+            return null;
         }
 
-        public bool IsNPCInBed(StardewValley.NPC npc, BedLoc bed)
+        public bool IsNPCInBed(NPC npc)
         {
-            if (npc.getTileX() != bed.MapX) return false;
-            if (npc.getTileY() != bed.MapY) return false;
-            if (npc.currentLocation.Name != bed.MapName) return false;
+            if (npc.currentLocation != npc.getHome()) return false;
+            Point? bedPoint = GetBedLocation(npc);
+            if (!bedPoint.HasValue) return false;
+            if (npc.getTileX() != bedPoint.Value.X) return false;
+            if (npc.getTileY() != bedPoint.Value.Y) return false;
             return true;
         }
 
@@ -103,12 +100,12 @@ namespace Sleepovers
             {
                 Attempts.Add(npc);
 
-                int friendship = ModUtil.GetFriendshipPoints(npc);
+                int friendship = Modworks.Player.GetFriendshipPoints(npc);
                 if(friendship < 500)
                 {
                     //offensive to even ask - you shouldn't be in the room.
                     Game1.showRedMessage(npc + " is offended you would ask.");
-                    ModUtil.SetFriendshipPoints(npc, Math.Max(0, friendship - 50));
+                    Modworks.Player.SetFriendshipPoints(npc, Math.Max(0, friendship - 50));
                 } else if(friendship < 750)
                 {
                     Game1.showRedMessage(npc + " doesn't know you that well.");
@@ -118,7 +115,7 @@ namespace Sleepovers
                     Random rng = new Random(DateTime.Now.Millisecond);
                     if (rng.NextDouble() <= chances)
                     {
-                        ModUtil.SetFriendshipPoints(npc, Math.Min(2500, friendship + 50));
+                        Modworks.Player.SetFriendshipPoints(npc, Math.Min(2500, friendship + 50));
                         DoSleepover();
                     } else
                     {
