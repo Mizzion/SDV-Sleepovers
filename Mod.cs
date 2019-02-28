@@ -65,6 +65,8 @@ namespace Sleepovers
         public Point? GetBedLocation(NPC c)
         {
             int latest = 0;
+            if (c == null) return null;
+            if (c.Schedule == null) return null;
             foreach(var kvp in c.Schedule)
             {
                 if (kvp.Key > latest) latest = kvp.Key;
