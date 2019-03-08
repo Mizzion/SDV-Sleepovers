@@ -1,8 +1,8 @@
-﻿using System.Reflection;
+using System.Reflection;
 [assembly: AssemblyTitle("Sleepovers")]
-[assembly: AssemblyDescription("A Stardew Valley mod for besties that don't care about a curfew.")]
+[assembly: AssemblyDescription("A Stardew Valley mod for those who just want to spend the night.")]
 [assembly: AssemblyCompany("bwdy")]
 [assembly: AssemblyProduct("Sleepovers")]
+[assembly: AssemblyFileVersion("1.0.0")]
+[assembly: AssemblyVersion("1.0.0")]
 [assembly: AssemblyCopyright("Copyright © bwdy 2019")]
-[assembly: AssemblyVersion("0.1.0.0")]
-[assembly: AssemblyFileVersion("0.1.0.0")]

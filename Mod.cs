@@ -30,7 +30,7 @@ namespace Sleepovers
 
             try
             {
-                string filecontents = File.ReadAllText(Helper.DirectoryPath + Path.DirectorySeparatorChar + "config.json");
+                string filecontents = File.ReadAllText(Helper.DirectoryPath + Path.DirectorySeparatorChar + "blacklist.json");
                 NoSleep = JsonConvert.DeserializeObject<List<string>>(filecontents);
             }
             catch (Exception)
@@ -45,15 +45,18 @@ namespace Sleepovers
             if (args.Cancelled) return; //someone else already ate this one
             if (Game1.player.ActiveObject == null) //empty hands to sleep
             {
-                if (Attempts.Contains(args.NPC.Name)) return; //already tried. no means no.
-
-                //check if NPC is present
-                if (IsNPCInBed(args.NPC))
+                if (Modworks.NPCs.IsChild(args.NPC)) return; //let's not get weird
+                if (args.NPC.CurrentDialogue.Count <= 0) //talk first
                 {
-                    args.Cancelled = true;
-                    Modworks.Menus.AskQuestion("Sleepover with " + args.NPC.Name + "?", new[] { new Response(args.NPC.Name, "Yes"), new Response(".nope.", "No") }, QuestionCallback);
+                    if (Attempts.Contains(args.NPC.Name)) return; //already tried. no means no.
+
+                    //check if NPC is present
+                    if (IsNPCInBed(args.NPC))
+                    {
+                        args.Cancelled = true;
+                        Modworks.Menus.AskQuestion("Sleepover with " + args.NPC.Name + "?", new[] { new Response(args.NPC.Name, "Yes"), new Response(".nope.", "No") }, QuestionCallback);
+                    }
                 }
-                return;
             }
         }
 
@@ -67,21 +70,25 @@ namespace Sleepovers
             int latest = 0;
             if (c == null) return null;
             if (c.Schedule == null) return null;
-            foreach(var kvp in c.Schedule)
+            try
             {
-                if (kvp.Key > latest) latest = kvp.Key;
-            }
-            if (c.Schedule.ContainsKey(latest))
-            {
-                Point[] paths = new Point[c.Schedule[latest].route.Count];
-                c.Schedule[latest].route.CopyTo(paths, 0);
-                return paths[paths.Length - 1];
-            }
+                foreach (var kvp in c.Schedule)
+                {
+                    if (kvp.Key > latest) latest = kvp.Key;
+                }
+                if (c.Schedule.ContainsKey(latest))
+                {
+                    Point[] paths = new Point[c.Schedule[latest].route.Count];
+                    c.Schedule[latest].route.CopyTo(paths, 0);
+                    return paths[paths.Length - 1];
+                }
+            } catch (Exception) { }
             return null;
         }
 
         public bool IsNPCInBed(NPC npc)
         {
+            if (npc == null) return false;
             if (npc.currentLocation != npc.getHome()) return false;
             Point? bedPoint = GetBedLocation(npc);
             if (!bedPoint.HasValue) return false;
@@ -107,7 +114,7 @@ namespace Sleepovers
                 {
                     //offensive to even ask - you shouldn't be in the room.
                     Game1.showRedMessage(npc + " is offended you would ask.");
-                    Modworks.Player.SetFriendshipPoints(npc, Math.Max(0, friendship - 50));
+                    Modworks.Player.SetFriendshipPoints(npc, Math.Max(0, friendship - Modworks.RNG.Next(100)));
                 } else if(friendship < 750)
                 {
                     Game1.showRedMessage(npc + " doesn't know you that well.");
@@ -117,7 +124,7 @@ namespace Sleepovers
                     Random rng = new Random(DateTime.Now.Millisecond);
                     if (rng.NextDouble() <= chances)
                     {
-                        Modworks.Player.SetFriendshipPoints(npc, Math.Min(2500, friendship + 50));
+                        Modworks.Player.SetFriendshipPoints(npc, Math.Min(2500, friendship + Modworks.RNG.Next(100)));
                         DoSleepover();
                     } else
                     {
